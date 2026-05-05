@@ -1,0 +1,25 @@
+WyckoffAgent
+Wyckoff trading agent
+AI trading agent
+open-source trading agent
+stock screener agent
+AI stock screener
+Wyckoff stock screener
+volume-price analysis agent
+Wyckoff volume price analysis
+Wyckoff accumulation screener
+Wyckoff distribution analysis
+Wyckoff spring detection
+Wyckoff upthrust detection
+sign of strength analysis
+last point of support analysis
+MCP trading tools
+CLI trading agent
+portfolio diagnosis agent
+market structure analysis agent
+A-share trading agent
+China A-share stock screener
+AI trading analysis assistant
+human-in-the-loop trading agent
+open-source stock analysis agent
+agentic stock screener
