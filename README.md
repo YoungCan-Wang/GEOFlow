@@ -2,7 +2,7 @@
 
 > Languages: [简体中文](README.md) | [English](docs/readme/README_en.md) | [日本語](docs/readme/README_ja.md) | [Español](docs/readme/README_es.md) | [Русский](docs/readme/README_ru.md) | [Português (BR)](docs/readme/README_pt_BR.md)
 
-> GEOFlow 是一套专门面向 GEO（生成式引擎优化）的开源智能内容工程系统，是全球最早围绕 GEO 场景系统化设计的数据、内容与分发基础设施之一。它把数据沉淀、知识库、素材管理、AI 生成、审核发布、前台展示与后续多端分发串联为一条可持续迭代的工作链路，目标是逐步演进为一套强大的“从数据到内容、从内容到多端发布”的 GEO 优化系统。
+> GEOFlow 是一套专门面向 GEO（生成式引擎优化）的开源智能内容工程与多站点分发系统。它把知识库、素材库、提示词、AI 生成任务、审核发布、数据分析、目标渠道站点包和远端静态页面分发串联为一条可持续运营的工作链路，目标是帮助团队把可信资料沉淀为可管理、可发布、可追踪、可同步到多端的 GEO 内容资产。
 
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-blue)](https://www.php.net/)
 [![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791)](https://www.postgresql.org/)
@@ -20,17 +20,19 @@ GEOFlow 以 [Apache License 2.0](LICENSE) 开源发布。你可以自由使用�
 
 | 特性 | 说明 |
 |------|------|
-| 🤖 多模型内容生成 | 兼容 OpenAI 风格接口，支持 chat / embedding 等模型类型、Provider URL 自动适配、智能模型切换与失败重试 |
-| 📦 批量任务运行 | 任务创建、文章总数与发布节奏控制、队列执行、失败记录与任务文章筛选；可选 **Laravel Horizon** 监控 |
-| 🗂 素材统一管理 | 标题库、关键词库、图片库、作者库、知识库、提示词集中管理 |
-| 🧠 知识库 RAG | 知识库上传后自动切片；配置 embedding 模型后可写入向量并在生成时召回相关片段 |
-| 📋 审核与发布工作流 | 草稿、审核、发布流程，可配置自动发布；文章管理支持状态、作者、任务等筛选 |
-| 🔍 面向搜索展示优化 | 文章 SEO 元信息、Open Graph、结构化数据；前台 Markdown 支持标题、表格、列表、图片等渲染 |
-| 🎨 前台与主题 | 默认主题、主题包、预览路径、后台主题切换；站点名称仅影响前台，后台品牌固定为 GEOFlow |
-| 🌍 后台多语言 | 后台支持中文、英文、日语、西班牙语、俄语、葡萄牙语（巴西）切换 |
+| 🤖 多模型内容生成 | 兼容 OpenAI 风格接口，支持 chat / embedding 模型、Provider URL 自动适配、智能模型切换、失败重试和调用统计 |
+| 🧠 知识库与 RAG | 知识库上传后自动切片；配置 embedding 模型后写入向量，在文章生成时召回相关资料 |
+| 🗂 素材与提示词体系 | 标题库、关键词库、图片库、作者库、知识库、正文提示词、特殊提示词集中管理 |
+| 📦 任务自动化 | 支持任务创建、生成数量、草稿池、审核开关、发布节奏、队列执行、失败重试和任务文章筛选 |
+| 📋 审核与文章管理 | 草稿、审核、发布、回收站、作者、分类、SEO 字段和任务来源统一管理 |
+| 📡 多站点分发管理 | 支持分发渠道、Agent 密钥、目标站点包、静态模式、伪静态规则、远端文章编辑/删除和队列日志 |
+| 🧾 目标站点包 | 为每个渠道生成预配置 PHP Agent 包，内置首页、详情页、静态资源、sitemap、`llms.txt` / TXT 地图和 Schema |
+| 📊 数据分析 | 集中展示系统总览、单站内容运营、多站分发、访问日志、Top 内容、AI 爬虫识别和趋势图 |
+| 🔍 SEO 与 LLM 抓取友好输出 | 文章 SEO 元信息、Open Graph、Schema、GFM Markdown、独立 CSS、图片同步、sitemap 和 TXT 地图 |
+| 🎨 前台与主题 | 默认主题、主题包、预览路径、后台主题切换；远端渠道可同步站点标题、版权、主题和分类设置 |
+| 🌍 后台多语言 | 后台支持中文、英文、日语、西班牙语、俄语、葡萄牙语（巴西）切换，并覆盖 2.0 新模块 |
 | 🔔 版本提醒 | 后台可按 `version.json` 检查 GitHub 新版本，并在有新版本时提醒管理员 |
-| 🐳 可直接部署 | **Docker Compose** 一键拉起 PostgreSQL（pgvector）、Redis、应用、队列、调度与 Reverb |
-| 🗄 PostgreSQL 运行时 | 默认基于 PostgreSQL，适合稳定运行与并发写入 |
+| 🐳 可直接部署 | **Docker Compose** 一键拉起 PostgreSQL（pgvector）、Redis、应用、队列、调度、Reverb 和生产 Nginx/php-fpm |
 
 ---
 
@@ -51,14 +53,15 @@ GEOFlow 以 [Apache License 2.0](LICENSE) 开源发布。你可以自由使用�
 
 ## 🆕 新版本重点
 
-新版本重点变化包括：
+GEOFlow 2.0 重点变化包括：
 
-- **后台体验**：固定后台品牌为 GEOFlow，支持多语言切换、管理员编辑/删除、首次欢迎页、版本更新提醒和仪表盘快速开始。
-- **任务链路**：任务支持固定模型与智能模型切换；生成与发布分离，任务文章可从任务列表跳转到对应筛选结果。
-- **素材体系**：素材库入口覆盖知识库、标题库、关键词库、图片库和作者库；知识库提供切片与向量化状态预览。
-- **模型接入**：Provider URL 规则更清晰，兼容 OpenAI 风格接口以及智谱、火山方舟等非 `/v1` 路径；embedding 未配置时提供明确引导。
-- **前台输出**：文章页 Markdown 采用 GFM 渲染，支持表格、标题、列表、图片；历史图片路径自动兼容 `/uploads` 与 `/storage/uploads`。
-- **部署与安全**：支持自定义后台路径 `ADMIN_BASE_PATH`，生产建议使用 Nginx + PHP-FPM，默认管理员密码必须在上线前修改。
+- **后台首页改为运营导航**：保留三步上手引导，并按单站点运营、多站点分发和配套 skill 资源组织入口。
+- **数据分析独立成页**：系统总览、内容运营、任务健康、素材健康、分发状态、访问日志和 AI 爬虫趋势集中到 `/admin/analytics`。
+- **分发管理进入可运行闭环**：支持渠道新建、密钥管理、测试连接、目标站点包下载、静态/伪静态模式、远端设置同步、队列、日志、远端文章编辑与删除。
+- **目标渠道站点支持静态页面**：文章分发后生成远端首页、详情页、sitemap、TXT 地图和 `llms.txt`，并同步图片与独立 CSS。
+- **素材与 RAG 更完整**：知识库切片、向量化状态、标题库、关键词库、图片库、作者和提示词体系形成任务生产输入。
+- **部署与安全增强**：生产 Docker 使用 Nginx + PHP-FPM，默认管理员 seed 不覆盖已有账号，Docker 镜像和 Composer 镜像可配置。
+- **多语言覆盖补齐**：后台语言包覆盖 2.0 新增模块，减少界面中出现裸翻译 key 或英文兜底。
 
 ---
 
@@ -67,13 +70,17 @@ GEOFlow 以 [Apache License 2.0](LICENSE) 开源发布。你可以自由使用�
 ```
 后台管理页面
     ↓
-任务调度器 / 队列（Horizon 可选）
+AI 配置 / 素材库 / 提示词 / 任务配置
     ↓
-Worker 执行 AI 生成
+调度器 / 队列 / Worker 执行 AI 生成
     ↓
 草稿 / 审核 / 发布
     ↓
-前台文章与 SEO 页面输出
+本地前台文章与 SEO 页面
+    ↓
+分发队列 / 目标站点 Agent
+    ↓
+远端静态首页、详情页、sitemap、TXT 地图与 llms.txt
 ```
 
 ---
@@ -82,11 +89,11 @@ Worker 执行 AI 生成
 
 | 层级 | 说明 |
 |------|------|
-| Web / Admin | **Laravel** 路由与控制器；前台文章站点与 **Blade** 后台；内容浏览、素材、任务与配置入口 |
-| API | `routes/api.php` 等提供机器可调用的 HTTP 接口（鉴权以项目配置为准） |
-| Scheduler / Queue / Reverb | **Laravel Scheduler** 扫描与入队；**`queue:work` / Horizon** 消费任务；**Reverb** 提供 WebSocket（按需启用） |
-| Domain & Jobs | `app/Services`、`app/Jobs`、`app/Http/Controllers` 等承载业务规则与 GEO 任务流水线 |
-| Persistence | **PostgreSQL**（推荐 **pgvector** 镜像与线上实例一致）+ **Redis**（队列/缓存等） |
+| Web / Admin | **Laravel** 路由与控制器；前台文章站点、**Blade** 后台、数据分析、分发管理、素材与任务入口 |
+| API / Agent | 本地 API 与目标站点 PHP Agent；负责分发健康检查、文章接收、远端设置同步和静态文件生成 |
+| Scheduler / Queue / Reverb | **Laravel Scheduler** 扫描与入队；**`queue:work` / Horizon** 消费生成与分发任务；**Reverb** 按需启用 |
+| Domain & Jobs | `app/Services`、`app/Jobs`、`app/Http/Controllers` 等承载 AI 生成、RAG、发布、分发和日志分析规则 |
+| Persistence | **PostgreSQL**（推荐 **pgvector** 镜像与线上实例一致）+ **Redis**（队列/缓存等）+ 目标站点本地 JSON/静态文件 |
 
 核心链路：
 
@@ -95,7 +102,9 @@ Worker 执行 AI 生成
 3. 创建任务并进入调度与队列
 4. Worker（队列进程）调用模型生成正文与元数据
 5. 文章进入草稿、审核、发布链路
-6. 前台输出文章与 SEO 页面
+6. 本地前台输出文章与 SEO 页面
+7. 如选择分发渠道，文章进入分发队列并同步到目标站点
+8. 数据分析页持续查看内容生产、分发状态、访问日志和 AI 爬虫趋势
 
 ---
 
@@ -189,6 +198,15 @@ docker compose up -d
 
 生产环境建议使用 **`docker-compose.prod.yml`**，改为 **`Nginx + php-fpm`**，而不是 `php artisan serve`。
 
+如果希望在常见云服务器上自动完成环境自检、Docker 检测、`.env.prod` 生成、容器部署和部署后健康检查，可以使用参考部署脚本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yaojingang/GEOFlow/main/deploy-scripts/geoflow-docker-deploy.sh -o geoflow-docker-deploy.sh
+bash geoflow-docker-deploy.sh
+```
+
+脚本说明见 [`deploy-scripts/README.md`](deploy-scripts/README.md)。
+
 ```bash
 cp .env.prod.example .env.prod
 vi .env.prod
@@ -201,7 +219,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d app web que
 
 - 前台 / 后台统一经 `web`（Nginx）访问
 - PHP 由 `app`（php-fpm）解析
-- **默认管理员**：生产不会自动 `db:seed`，迁移成功后需手动执行一次（命令与账号见 `docs/deployment/DEPLOYMENT.md`「默认管理员（首次种子）」）
+- **默认管理员**：生产 `init` 服务会在迁移后执行一次 `db:seed`，只在目标用户名不存在时写入默认后台账号；重复执行不会覆盖已有账号或密码
 - 详细说明见 `docs/deployment/DEPLOYMENT.md`
 
 ### 方式二：本地 PHP 服务器
@@ -232,7 +250,7 @@ php artisan serve --host=127.0.0.1 --port=8080
 另开终端启动常驻进程（与 Docker 中 `queue` / `scheduler` / `reverb` 对应）：
 
 ```bash
-php artisan queue:work redis --queue=geoflow,default --sleep=1 --tries=1 --timeout=300
+php artisan queue:work redis --queue=geoflow,distribution,default --sleep=1 --tries=1 --timeout=300
 php artisan schedule:work
 php artisan reverb:start
 ```
@@ -266,8 +284,10 @@ chmod -R ug+rwx storage bootstrap/cache
 
 | 字段 | 值 |
 |------|-----|
-| 用户名 | `admin` |
-| 密码 | `password`（**生产环境请立即修改**） |
+| 用户名 | `GEOFLOW_ADMIN_USERNAME`，默认 `admin` |
+| 密码 | 本地开发默认 `password`；生产环境请设置 `GEOFLOW_ADMIN_PASSWORD`。若生产环境留空且账号尚不存在，seed 会生成一次性随机密码并输出到初始化日志 |
+
+补充规则：`AdminUserSeeder` 只在目标用户名不存在时创建账号；重复执行不会覆盖已有用户名、邮箱或密码。若账号已存在，即使生产环境 `GEOFLOW_ADMIN_PASSWORD` 为空，也不会重新生成或打印密码。
 
 ### 管理员登录失败锁定与手动解锁
 

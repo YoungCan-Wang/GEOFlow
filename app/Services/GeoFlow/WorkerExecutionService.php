@@ -32,7 +32,8 @@ class WorkerExecutionService
      */
     public function __construct(
         private readonly ApiKeyCrypto $apiKeyCrypto,
-        private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService
+        private readonly KnowledgeChunkSyncService $knowledgeChunkSyncService,
+        private readonly DistributionOrchestrator $distributionOrchestrator
     ) {}
 
     /**
@@ -52,6 +53,8 @@ class WorkerExecutionService
 
         $publishResult = $this->publishDueDraftArticle($task);
         if ($publishResult !== null) {
+            $this->distributionOrchestrator->enqueueForArticle((int) $publishResult['article_id']);
+
             return $publishResult;
         }
 
@@ -186,7 +189,7 @@ class WorkerExecutionService
             $freshTask = Task::query()
                 ->whereKey((int) $task->id)
                 ->lockForUpdate()
-                ->first(['id', 'status', 'schedule_enabled', 'publish_interval', 'next_publish_at']);
+                ->first(['id', 'status', 'schedule_enabled', 'publish_interval', 'next_publish_at', 'publish_scope']);
             if (! $freshTask || ($freshTask->status ?? 'paused') !== 'active' || (int) ($freshTask->schedule_enabled ?? 1) !== 1) {
                 throw new RuntimeException('任务未激活');
             }
@@ -208,7 +211,9 @@ class WorkerExecutionService
                 return null;
             }
 
-            $workflow = ArticleWorkflow::normalizeState('published', (string) ($article->review_status ?: 'approved'));
+            $publishScope = (string) ($freshTask->publish_scope ?? 'local_and_distribution');
+            $targetStatus = $publishScope === 'distribution_only' ? 'private' : 'published';
+            $workflow = ArticleWorkflow::normalizeState($targetStatus, (string) ($article->review_status ?: 'approved'));
             Article::query()->whereKey((int) $article->id)->update([
                 'status' => $workflow['status'],
                 'review_status' => $workflow['review_status'],
@@ -436,14 +441,25 @@ class WorkerExecutionService
         return $title;
     }
 
-    private function pickAuthor(Task $task): ?Author
+    private function pickAuthor(Task $task): Author
     {
         $authorId = (int) ($task->custom_author_id ?: $task->author_id);
         if ($authorId > 0) {
-            return Author::query()->find($authorId);
+            $author = Author::query()->find($authorId);
+            if ($author) {
+                return $author;
+            }
         }
 
-        return Author::query()->orderBy('id')->first();
+        $author = Author::query()->orderBy('id')->first();
+        if ($author) {
+            return $author;
+        }
+
+        return Author::query()->firstOrCreate(
+            ['name' => 'GEOFlow'],
+            ['bio' => 'Default GEOFlow author for automated content generation.']
+        );
     }
 
     private function pickCategory(Task $task): ?Category
@@ -501,6 +517,7 @@ class WorkerExecutionService
             }
 
             $value = $this->promptContextValue($name, $context);
+
             return trim($value) !== '' ? (string) ($matches[2] ?? '') : '';
         }, $prompt) ?? $prompt;
 
@@ -631,14 +648,25 @@ class WorkerExecutionService
         $rows = KnowledgeChunk::query()
             ->where('knowledge_base_id', $knowledgeBaseId)
             ->orderBy('chunk_index')
-            ->get(['chunk_index', 'content', 'embedding_json'])
+            ->get(['chunk_index', 'content', 'embedding_json', 'embedding_model_id', 'embedding_dimensions'])
             ->all();
         if ($rows === []) {
             return '';
         }
 
         $queryTerms = $this->termFrequencies($query);
-        $queryVector = $this->decodeVector(json_encode($this->buildFallbackVector($query, 256)));
+        $hasRealEmbeddingRows = collect($rows)->contains(
+            fn ($row): bool => $this->chunkHasRealEmbedding($row)
+        );
+        $useRealEmbeddingScore = false;
+        $queryVector = [];
+        if ($hasRealEmbeddingRows && trim($query) !== '') {
+            $queryVector = $this->knowledgeChunkSyncService->generateQueryEmbeddingVector($query);
+            $useRealEmbeddingScore = $queryVector !== [];
+        }
+        if ($queryVector === []) {
+            $queryVector = $this->decodeVector(json_encode($this->buildFallbackVector($query, 256)));
+        }
 
         $scored = [];
         foreach ($rows as $row) {
@@ -650,7 +678,10 @@ class WorkerExecutionService
             $vector = $this->decodeVector((string) ($row->embedding_json ?? ''));
             $chunkTerms = $this->termFrequencies($content);
             $lexicalScore = $this->lexicalScore($queryTerms, $chunkTerms);
-            $vectorScore = $this->dotProduct($queryVector, $vector);
+            $chunkUsesRealEmbedding = $this->chunkHasRealEmbedding($row);
+            $vectorScore = ($useRealEmbeddingScore === $chunkUsesRealEmbedding)
+                ? $this->dotProduct($queryVector, $vector)
+                : 0.0;
             $score = ($vectorScore * 0.75) + ($lexicalScore * 0.25);
 
             $scored[] = [
@@ -667,6 +698,15 @@ class WorkerExecutionService
         });
 
         return $this->composeKnowledgeContext($scored, $limit, $maxChars);
+    }
+
+    /**
+     * 判断 chunk 是否保存了真实 embedding，而不是 fallback hash 向量。
+     */
+    private function chunkHasRealEmbedding(object $row): bool
+    {
+        return (int) ($row->embedding_model_id ?? 0) > 0
+            && (int) ($row->embedding_dimensions ?? 0) > 0;
     }
 
     /**
@@ -781,8 +821,13 @@ class WorkerExecutionService
             throw new RuntimeException('AI 生成失败: '.OpenAiRuntimeProvider::normalizeApiException($exception, $providerUrl), 0, $exception);
         }
 
-        $content = trim((string) ($response->text ?? ''));
+        $rawContent = (string) ($response->text ?? '');
+        $content = OpenAiRuntimeProvider::normalizeGeneratedText($rawContent);
         if ($content === '') {
+            if (OpenAiRuntimeProvider::looksLikeSseCompletionPayload($rawContent)) {
+                throw new RuntimeException('AI 返回空流式响应，未生成正文内容，请重试或检查模型流式输出兼容性');
+            }
+
             throw new RuntimeException('AI返回空正文');
         }
 

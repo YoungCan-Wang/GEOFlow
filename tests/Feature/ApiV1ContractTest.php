@@ -3,9 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Admin;
+use App\Models\AiModel;
 use App\Models\Keyword;
 use App\Models\KeywordLibrary;
+use App\Models\Prompt;
 use App\Models\Task;
+use App\Models\TitleLibrary;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -91,8 +94,30 @@ class ApiV1ContractTest extends TestCase
             ]);
 
         $this->assertNotEmpty($response->json('data.token'));
+        $this->assertNotEmpty($response->json('data.expires_at'));
         $this->assertContains('materials:read', $response->json('data.scopes'));
         $this->assertContains('materials:write', $response->json('data.scopes'));
+    }
+
+    public function test_login_locks_account_after_repeated_password_failures(): void
+    {
+        $admin = $this->createActiveAdmin('lock_me', 'right-pass');
+
+        for ($i = 0; $i < 4; $i++) {
+            $this->postJson('/api/v1/auth/login', [
+                'username' => 'lock_me',
+                'password' => 'wrong-pass',
+            ])->assertStatus(401);
+        }
+
+        $this->postJson('/api/v1/auth/login', [
+            'username' => 'lock_me',
+            'password' => 'wrong-pass',
+        ])
+            ->assertStatus(423)
+            ->assertJsonPath('error.code', 'account_locked');
+
+        $this->assertSame('locked', $admin->fresh()->status);
     }
 
     public function test_catalog_forbidden_when_scope_missing(): void
@@ -221,5 +246,55 @@ class ApiV1ContractTest extends TestCase
             ->assertJsonPath('data.id', $task->id);
 
         $this->assertDatabaseMissing('tasks', ['id' => $task->id]);
+    }
+
+    public function test_task_create_accepts_omitted_optional_material_fields(): void
+    {
+        $admin = $this->createActiveAdmin('u9', 'p');
+        $bearer = $this->createBearerToken($admin, ['tasks:write']);
+        $model = AiModel::query()->create([
+            'name' => 'Task Create Model',
+            'model_id' => 'task-create-model',
+            'model_type' => 'chat',
+            'status' => 'active',
+        ]);
+        $prompt = Prompt::query()->create([
+            'name' => 'Task Create Prompt',
+            'type' => 'content',
+            'content' => 'Write an article.',
+        ]);
+        $titleLibrary = TitleLibrary::query()->create([
+            'name' => 'Task Create Titles',
+            'description' => '',
+            'title_count' => 0,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$bearer['plain'])
+            ->postJson('/api/v1/tasks', [
+                'name' => 'API create task with optional fields omitted',
+                'title_library_id' => $titleLibrary->id,
+                'prompt_id' => $prompt->id,
+                'ai_model_id' => $model->id,
+                'status' => 'paused',
+                'category_mode' => 'smart',
+                'draft_limit' => 1,
+                'article_limit' => 1,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.name', 'API create task with optional fields omitted')
+            ->assertJsonPath('data.image_library_id', null)
+            ->assertJsonPath('data.author_id', null)
+            ->assertJsonPath('data.knowledge_base_id', null)
+            ->assertJsonPath('data.fixed_category_id', null);
+
+        $this->assertDatabaseHas('tasks', [
+            'id' => $response->json('data.id'),
+            'image_library_id' => null,
+            'author_id' => null,
+            'knowledge_base_id' => null,
+            'fixed_category_id' => null,
+        ]);
     }
 }

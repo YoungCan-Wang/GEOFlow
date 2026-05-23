@@ -11,11 +11,13 @@ use App\Models\KnowledgeBase;
 use App\Models\Prompt;
 use App\Models\TitleLibrary;
 use App\Models\UrlImportJob;
+use App\Models\UrlImportJobLog;
 use App\Support\GeoFlow\ApiKeyCrypto;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -153,6 +155,95 @@ class AdminMaterialsPagesTest extends TestCase
             'file_type' => 'markdown',
         ]);
         $this->assertGreaterThan(0, KnowledgeBase::query()->count());
+    }
+
+    public function test_admin_can_refresh_knowledge_chunks_with_real_embedding_model(): void
+    {
+        Http::fake([
+            'https://ai.test/v1/embeddings' => Http::response([
+                'data' => [
+                    ['embedding' => [0.1, 0.2, 0.3]],
+                ],
+            ]),
+        ]);
+
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_refresh_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-refresh-admin@example.com',
+            'display_name' => 'Knowledge Refresh Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $embeddingModel = AiModel::query()->create([
+            'name' => 'Test Embedding',
+            'version' => '',
+            'api_key' => app(ApiKeyCrypto::class)->encrypt('test-api-key'),
+            'model_id' => 'test-embedding-model',
+            'model_type' => 'embedding',
+            'api_url' => 'https://ai.test',
+            'failover_priority' => 1,
+            'daily_limit' => 100,
+            'used_today' => 0,
+            'total_used' => 0,
+            'status' => 'active',
+        ]);
+
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => '待向量化知识库',
+            'description' => 'desc',
+            'content' => 'GEOFlow 支持知识库切片和向量化检索。',
+            'character_count' => 22,
+            'file_type' => 'markdown',
+            'word_count' => 22,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.knowledge-bases.index'))
+            ->assertOk()
+            ->assertSee(__('admin.knowledge_bases.refresh_chunks'));
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
+            ->assertRedirect(route('admin.knowledge-bases.index'))
+            ->assertSessionHas('message');
+
+        $chunk = $knowledgeBase->chunks()->firstOrFail();
+        $this->assertSame((int) $embeddingModel->id, (int) $chunk->embedding_model_id);
+        $this->assertSame(3, (int) $chunk->embedding_dimensions);
+        $this->assertSame([0.1, 0.2, 0.3], json_decode((string) $chunk->embedding_json, true));
+    }
+
+    public function test_refresh_knowledge_chunks_requires_embedding_model(): void
+    {
+        Http::fake();
+
+        $admin = Admin::query()->create([
+            'username' => 'knowledge_no_embedding_admin',
+            'password' => 'secret-123',
+            'email' => 'knowledge-no-embedding-admin@example.com',
+            'display_name' => 'Knowledge No Embedding Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $knowledgeBase = KnowledgeBase::query()->create([
+            'name' => '无向量模型知识库',
+            'description' => 'desc',
+            'content' => '没有 embedding 模型时不能把 fallback 当作真实向量。',
+            'character_count' => 28,
+            'file_type' => 'markdown',
+            'word_count' => 28,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.knowledge-bases.chunks.refresh', ['knowledgeBaseId' => (int) $knowledgeBase->id]))
+            ->assertRedirect(route('admin.knowledge-bases.index'))
+            ->assertSessionHasErrors();
+
+        $this->assertSame(0, $knowledgeBase->chunks()->count());
+        Http::assertNothingSent();
     }
 
     public function test_admin_can_create_url_import_job_without_url_scheme(): void
@@ -658,6 +749,71 @@ class AdminMaterialsPagesTest extends TestCase
             'job_id' => (int) $job->id,
             'level' => 'warning',
         ]);
+        $this->assertSame(3, UrlImportJobLog::query()
+            ->where('job_id', (int) $job->id)
+            ->where('level', 'warning')
+            ->where('message', 'like', '%Bad Model%')
+            ->count());
+    }
+
+    public function test_url_import_retries_transient_ai_failure_before_success(): void
+    {
+        Http::fake([
+            'https://source.test/transient' => Http::response(
+                '<!doctype html><html><head><title>CRM 增长页</title><meta name="description" content="CRM 增长页摘要"></head><body><article><h1>CRM 增长页</h1><p>面向企业的 CRM 增长服务。</p></article></body></html>',
+                200,
+                ['Content-Type' => 'text/html; charset=utf-8']
+            ),
+            'https://ai.test/v1/chat/completions' => Http::sequence()
+                ->push(['error' => ['message' => 'temporary upstream error']], 500)
+                ->push(['choices' => [['message' => ['content' => json_encode([
+                    'clean_title' => 'CRM 增长页',
+                    'clean_summary' => '面向企业的 CRM 增长服务。',
+                    'clean_text' => '面向企业的 CRM 增长服务。',
+                    'core_business' => ['industry' => 'CRM', 'products_services' => ['CRM 增长服务']],
+                    'entities' => ['CRM 增长服务'],
+                    'facts' => ['面向企业的 CRM 增长服务。'],
+                    'noise_removed' => [],
+                ], JSON_UNESCAPED_UNICODE)]]]], 200)
+                ->push(['choices' => [['message' => ['content' => json_encode([
+                    'summary' => '面向企业的 CRM 增长服务。',
+                    'library_name' => 'CRM 增长页',
+                    'knowledge_markdown' => "# CRM 增长页\n\n- 面向企业的 CRM 增长服务。",
+                ], JSON_UNESCAPED_UNICODE)]]]], 200)
+                ->push(['choices' => [['message' => ['content' => json_encode(['keywords' => ['CRM增长', '客户管理']], JSON_UNESCAPED_UNICODE)]]]], 200)
+                ->push(['choices' => [['message' => ['content' => json_encode(['titles' => ['CRM 增长服务如何支撑 GEO 运营']], JSON_UNESCAPED_UNICODE)]]]], 200),
+        ]);
+
+        $admin = Admin::query()->create([
+            'username' => 'url_import_retry_admin',
+            'password' => 'secret-123',
+            'email' => 'url-import-retry@example.com',
+            'display_name' => 'Url Import Retry Admin',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $this->createReadyUrlImportAiModel();
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.url-import.store'), [
+                'url' => 'source.test/transient',
+                'outputs' => ['knowledge', 'keywords', 'titles'],
+            ])
+            ->assertRedirect();
+
+        $job = UrlImportJob::query()->firstOrFail();
+
+        $this->actingAs($admin, 'admin')
+            ->postJson(route('admin.url-import.run', ['jobId' => (int) $job->id]))
+            ->assertOk()
+            ->assertJsonPath('status', 'completed');
+
+        $result = json_decode((string) $job->refresh()->result_json, true);
+        $this->assertSame('URL Import AI Model', $result['analysis']['model']['name'] ?? null);
+        $this->assertDatabaseHas('url_import_job_logs', [
+            'job_id' => (int) $job->id,
+            'level' => 'warning',
+        ]);
     }
 
     public function test_admin_can_open_all_material_detail_pages(): void
@@ -796,6 +952,8 @@ class AdminMaterialsPagesTest extends TestCase
 
     public function test_admin_can_upload_image_and_knowledge_file_from_detail_flow(): void
     {
+        Storage::fake('public');
+
         $admin = Admin::query()->create([
             'username' => 'materials_upload_admin',
             'password' => 'secret-123',
@@ -821,6 +979,13 @@ class AdminMaterialsPagesTest extends TestCase
             'library_id' => (int) $imageLibrary->id,
             'original_name' => 'banner.png',
         ]);
+
+        $storedImage = Image::query()
+            ->where('library_id', (int) $imageLibrary->id)
+            ->where('original_name', 'banner.png')
+            ->firstOrFail();
+        $this->assertStringStartsWith('storage/uploads/images/', (string) $storedImage->file_path);
+        Storage::disk('public')->assertExists(str_replace('storage/', '', (string) $storedImage->file_path));
 
         $knowledgeFile = UploadedFile::fake()->createWithContent('manual.md', "# 标题\n内容段落");
         $this->actingAs($admin, 'admin')->post(route('admin.knowledge-bases.upload'), [

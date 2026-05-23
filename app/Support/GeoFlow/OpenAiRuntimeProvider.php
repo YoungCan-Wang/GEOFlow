@@ -37,6 +37,32 @@ final class OpenAiRuntimeProvider
     }
 
     /**
+     * 将历史或自定义 api_url 规范为 Embeddings 可用的 base（根路径时补全 /v1）。
+     */
+    public static function resolveEmbeddingBaseUrl(string $apiUrl): string
+    {
+        $normalized = trim($apiUrl);
+        if ($normalized === '') {
+            return '';
+        }
+
+        $normalized = rtrim($normalized, '/');
+        if (preg_match('#/v1/embeddings$#', $normalized) === 1) {
+            return substr($normalized, 0, -strlen('/embeddings'));
+        }
+        if (preg_match('#/embeddings$#', $normalized) === 1) {
+            return substr($normalized, 0, -strlen('/embeddings'));
+        }
+
+        $path = (string) (parse_url($normalized, PHP_URL_PATH) ?? '');
+        if ($path === '' || $path === '/') {
+            return $normalized.'/v1';
+        }
+
+        return $normalized;
+    }
+
+    /**
      * Laravel AI 的 openai driver 默认走 Responses API；多数第三方兼容接口仍只支持 Chat Completions。
      */
     public static function resolveChatDriver(string $apiUrl, string $modelId = ''): string
@@ -97,6 +123,88 @@ final class OpenAiRuntimeProvider
         return $message !== '' ? $message : $exception::class;
     }
 
+    /**
+     * 兼容部分 OpenAI 兼容网关把 SSE chunk 原文透传到 text 字段的情况。
+     */
+    public static function normalizeGeneratedText(string $content): string
+    {
+        $trimmed = trim($content);
+        if ($trimmed === '' || ! self::looksLikeSseCompletionPayload($trimmed)) {
+            return $trimmed;
+        }
+
+        $segments = [];
+        foreach (preg_split('/\R/u', $trimmed) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || ! str_starts_with($line, 'data:')) {
+                continue;
+            }
+
+            $payload = trim(substr($line, strlen('data:')));
+            if ($payload === '' || $payload === '[DONE]') {
+                continue;
+            }
+
+            $data = json_decode($payload, true);
+            if (! is_array($data)) {
+                continue;
+            }
+
+            if (($data['type'] ?? null) === 'response.output_text.delta' && isset($data['delta'])) {
+                $segments[] = self::stringifyContentPart($data['delta']);
+                continue;
+            }
+
+            $choices = $data['choices'] ?? [];
+            if (! is_array($choices)) {
+                continue;
+            }
+
+            foreach ($choices as $choice) {
+                if (! is_array($choice)) {
+                    continue;
+                }
+
+                $delta = $choice['delta'] ?? [];
+                if (is_array($delta) && array_key_exists('content', $delta)) {
+                    $segments[] = self::stringifyContentPart($delta['content']);
+                }
+
+                $message = $choice['message'] ?? [];
+                if (is_array($message) && array_key_exists('content', $message)) {
+                    $segments[] = self::stringifyContentPart($message['content']);
+                }
+
+                if (array_key_exists('text', $choice)) {
+                    $segments[] = self::stringifyContentPart($choice['text']);
+                }
+            }
+        }
+
+        return trim(implode('', array_filter($segments, static fn (string $segment): bool => $segment !== '')));
+    }
+
+    public static function looksLikeSseCompletionPayload(string $content): bool
+    {
+        $trimmed = trim($content);
+        if ($trimmed === '') {
+            return false;
+        }
+
+        $lines = array_values(array_filter(
+            preg_split('/\R/u', $trimmed) ?: [],
+            static fn (string $line): bool => trim($line) !== ''
+        ));
+
+        if ($lines === [] || ! str_starts_with(trim($lines[0]), 'data:')) {
+            return false;
+        }
+
+        return str_contains($trimmed, 'data: [DONE]')
+            || str_contains($trimmed, 'chat.completion.chunk')
+            || str_contains($trimmed, 'response.output_text.delta');
+    }
+
     private static function looksLikeNonJsonResponse(string $lowerMessage): bool
     {
         return str_contains($lowerMessage, '<!doctype')
@@ -115,5 +223,30 @@ final class OpenAiRuntimeProvider
         }
 
         return rtrim($providerUrl, '/').'/chat/completions';
+    }
+
+    private static function stringifyContentPart(mixed $content): string
+    {
+        if (is_string($content) || is_numeric($content)) {
+            return (string) $content;
+        }
+
+        if (! is_array($content)) {
+            return '';
+        }
+
+        $text = '';
+        foreach ($content as $part) {
+            if (is_string($part) || is_numeric($part)) {
+                $text .= (string) $part;
+                continue;
+            }
+
+            if (is_array($part)) {
+                $text .= self::stringifyContentPart($part['text'] ?? $part['content'] ?? '');
+            }
+        }
+
+        return $text;
     }
 }
