@@ -15,7 +15,7 @@ class DistributionOrchestrator
 {
     public function __construct(
         private readonly DistributionPayloadBuilder $payloadBuilder,
-        private readonly DistributionHttpClient $httpClient
+        private readonly DistributionPublisherManager $publisherManager
     ) {}
 
     /**
@@ -104,7 +104,7 @@ class DistributionOrchestrator
      */
     public function healthCheck(DistributionChannel $channel): array
     {
-        return $this->httpClient->health($channel);
+        return $this->publisherManager->forChannel($channel)->health($channel);
     }
 
     public function process(ArticleDistribution $distribution): void
@@ -128,17 +128,21 @@ class DistributionOrchestrator
             $payload['event'] = 'article.update';
         }
 
+        $publisher = $this->publisherManager->forChannel($channel);
         $response = match ((string) $distribution->action) {
-            'update' => $this->httpClient->updateArticle($distribution, $payload),
-            'delete' => $this->httpClient->deleteArticle($distribution),
-            default => $this->httpClient->send($distribution, $payload),
+            'update' => $publisher->update($distribution, $payload),
+            'delete' => $publisher->delete($distribution),
+            default => $publisher->publish($distribution, $payload),
         };
+        $existingMeta = is_array($distribution->remote_meta) ? $distribution->remote_meta : [];
+        $responseMeta = is_array($response['remote_meta'] ?? null) ? $response['remote_meta'] : [];
         $distribution->forceFill([
             'status' => 'synced',
             'remote_id' => is_scalar($response['remote_id'] ?? null) ? (string) $response['remote_id'] : $distribution->remote_id,
             'remote_url' => (string) $distribution->action === 'delete'
                 ? null
                 : (is_scalar($response['remote_url'] ?? null) ? (string) $response['remote_url'] : $distribution->remote_url),
+            'remote_meta' => array_replace($existingMeta, $responseMeta),
             'last_error_message' => null,
         ])->save();
 
@@ -252,16 +256,20 @@ class DistributionOrchestrator
             'idempotency_key' => $this->idempotencyKey((int) $article->id, (int) $channel->id, $action),
         ])->save();
 
+        $publisher = $this->publisherManager->forChannel($channel);
         $response = $action === 'delete'
-            ? $this->httpClient->deleteArticle($distribution)
-            : $this->httpClient->updateArticle($distribution, $payload);
+            ? $publisher->delete($distribution)
+            : $publisher->update($distribution, $payload);
 
+        $existingMeta = is_array($distribution->remote_meta) ? $distribution->remote_meta : [];
+        $responseMeta = is_array($response['remote_meta'] ?? null) ? $response['remote_meta'] : [];
         $distribution->forceFill([
             'status' => 'synced',
             'remote_id' => is_scalar($response['remote_id'] ?? null) ? (string) $response['remote_id'] : $distribution->remote_id,
             'remote_url' => $action === 'delete'
                 ? null
                 : (is_scalar($response['remote_url'] ?? null) ? (string) $response['remote_url'] : $distribution->remote_url),
+            'remote_meta' => array_replace($existingMeta, $responseMeta),
             'last_error_message' => null,
         ])->save();
 

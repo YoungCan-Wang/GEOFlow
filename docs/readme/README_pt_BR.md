@@ -2,7 +2,7 @@
 
 > Languages: [简体中文](../../README.md) | [English](README_en.md) | [日本語](README_ja.md) | [Español](README_es.md) | [Русский](README_ru.md) | **Português (BR)**
 
-> GEOFlow é um sistema open source de engenharia de conteúdo GEO (Generative Engine Optimization) e distribuição multi-site. Ele conecta bases de conhecimento, bibliotecas de materiais, prompts, tarefas de geração por IA, revisão e publicação, analytics, pacotes de sites-alvo e distribuição remota de páginas estáticas para transformar materiais confiáveis em ativos GEO publicáveis, rastreáveis e distribuíveis.
+> GEOFlow é um sistema open source de engenharia de conteúdo GEO (Generative Engine Optimization) e distribuição multi-site. Ele conecta bases de conhecimento, bibliotecas de materiais, prompts, tarefas de geração por IA, revisão e publicação, analytics, pacotes de sites-alvo GEOFlow Agent, canais WordPress REST e distribuição remota de páginas estáticas para transformar materiais confiáveis em ativos GEO publicáveis, rastreáveis e distribuíveis.
 
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-blue)](https://www.php.net/)
 [![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791)](https://www.postgresql.org/)
@@ -20,12 +20,12 @@ O GEOFlow é lançado sob a [Licença Apache 2.0](../../LICENSE). Você pode usa
 
 | Recurso | Descrição |
 |---------|-----------|
-| 🤖 Geração multi-modelo | APIs estilo OpenAI, modelos chat / embedding, adaptação de URL, failover inteligente, retries e estatísticas de uso |
-| 🧠 RAG de base de conhecimento | Upload de documentos, chunks, vetores com embedding e recuperação de contexto durante a geração |
+| 🤖 Geração multi-modelo | APIs estilo OpenAI e endpoints nativos Gemini, modelos chat / embedding, adaptação de URL, failover inteligente, retries e estatísticas de uso |
+| 🧠 RAG de base de conhecimento | Chunking por regras, planejamento semântico opcional com LLM, fallback estável, vetores com embedding e recuperação de contexto durante a geração |
 | 🗂 Materiais e prompts | Títulos, palavras-chave, imagens, autores, bases de conhecimento, prompts de corpo e prompts especiais |
-| 📦 Automação de tarefas | Limites de geração, pool de rascunhos, revisão, cadência de publicação, filas, retries e filtros por tarefa |
+| 📦 Automação de tarefas | Limites de geração, pool de rascunhos, revisão, cadência de publicação, filas, retries, escopo de publicação e filtros por tarefa |
 | 📋 Revisão e artigos | Rascunhos, revisão, publicação, lixeira, autores, categorias, SEO e origem da tarefa em um único fluxo |
-| 📡 Distribuição multi-site | Canais, segredos de Agent, pacotes de site-alvo, modo estático, regras rewrite, edição/exclusão remota, filas e logs |
+| 📡 Distribuição multi-site | Canais GEOFlow Agent e WordPress REST, segredos, pacotes de site-alvo, modo estático, regras rewrite, edição/exclusão remota, filas e logs |
 | 🧾 Pacotes de site-alvo | PHP Agent por canal com home, páginas de artigo, assets estáticos, sitemap, `llms.txt` / mapas TXT e Schema |
 | 📊 Analytics | Visão global, operação de site único, distribuição multi-site, logs de acesso, top conteúdos, crawlers de IA e tendências |
 | 🔍 Saída SEO e LLM-friendly | SEO, Open Graph, Schema, Markdown GFM, CSS independente, sincronização de imagens, sitemap e mapas TXT |
@@ -38,16 +38,22 @@ O GEOFlow é lançado sob a [Licença Apache 2.0](../../LICENSE). Você pode usa
 
 ## 🖼 Preview da Interface
 
-<p>
-  <img src="../../docs/images/screenshots/dashboard-en.png" alt="GEOFlow dashboard preview" width="48%" />
-  <img src="../../docs/images/screenshots/tasks-en.png" alt="GEOFlow task management preview" width="48%" />
-</p>
-<p>
-  <img src="../../docs/images/screenshots/materials-en.png" alt="GEOFlow materials preview" width="48%" />
-  <img src="../../docs/images/screenshots/ai-config-en.png" alt="GEOFlow AI configuration preview" width="48%" />
-</p>
+<table>
+  <tr>
+    <td width="34%" rowspan="3"><img src="../../docs/images/screenshots/analytics-en.png" alt="GEOFlow analytics preview" /><br /><sub>Analytics</sub></td>
+    <td width="33%" rowspan="2"><img src="../../docs/images/screenshots/site-settings-en.png" alt="GEOFlow site settings preview" /><br /><sub>Site Settings</sub></td>
+    <td width="33%"><img src="../../docs/images/screenshots/dashboard-en.png" alt="GEOFlow admin dashboard preview" /><br /><sub>Admin Dashboard</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="../../docs/images/screenshots/tasks-en.png" alt="GEOFlow task management preview" /><br /><sub>Task Management</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="../../docs/images/screenshots/ai-config-en.png" alt="GEOFlow AI model configuration preview" /><br /><sub>AI Model Configuration</sub></td>
+    <td width="33%"><img src="../../docs/images/screenshots/materials-en.png" alt="GEOFlow materials preview" /><br /><sub>Materials</sub></td>
+  </tr>
+</table>
 
-Essas telas cobrem a home page, agendamento de tarefas, fluxo de trabalho de artigos e configuração de modelo. Mais documentação do admin está em `../../docs/` (adicione ou substitua screenshots localmente se os caminhos estiverem faltando).
+Essas telas cobrem o painel admin, analytics, tarefas, materiais, configuração de modelos e ajustes do site.
 
 ---
 
@@ -56,8 +62,11 @@ Essas telas cobrem a home page, agendamento de tarefas, fluxo de trabalho de art
 Destaques do GEOFlow 2.0:
 
 - **Dashboard como hub operacional**: mantém o guia de três passos e organiza entradas por operação de site único, distribuição multi-site e skills complementares.
+- **Gemini e provedores OpenAI-compatible**: a configuração de modelos cobre rotas OpenAI-style e Gemini nativo para chat / embedding.
+- **Chunking semântico para conhecimento**: permite regras estruturadas, modo automático ou planejamento semântico opcional com LLM; o LLM planeja limites e os chunks finais são reconstruídos do texto original.
 - **Analytics independente**: visão global, operação de conteúdo, saúde de tarefas/materiais, status de distribuição, logs de acesso e tendências de crawlers de IA ficam em `/admin/analytics`.
-- **Distribuição ponta a ponta**: canais, segredos, testes de conexão, pacotes de site-alvo, modos estático/rewrite, sincronização de configurações remotas, filas, logs, edição e exclusão remota.
+- **Distribuição ponta a ponta**: canais GEOFlow Agent e WordPress REST, segredos, testes de conexão, pacotes de site-alvo, modos estático/rewrite, sincronização de configurações remotas, filas, logs, edição e exclusão remota.
+- **Escopo de publicação explícito**: tarefas podem publicar localmente e em canais, somente em canais ou somente no GEOFlow local; o modo local desativa a seleção de canais.
 - **Sites-alvo podem ser estáticos**: a distribuição regenera home remota, páginas de artigo, sitemap, mapas TXT, `llms.txt`, imagens e CSS independente.
 - **Materiais e RAG mais completos**: chunks, status de vetorização, títulos, palavras-chave, imagens, autores e prompts formam a camada de entrada das tarefas.
 - **Deploy e segurança melhores**: Docker de produção usa Nginx + PHP-FPM, o seeder não sobrescreve admins existentes e mirrors Docker/Composer são configuráveis.
@@ -101,9 +110,9 @@ Fluxo principal: configuração de modelos e prompts → preparação de base de
 
 ## ⚡ Início Rápido no Admin
 
-1. **Configure a API**: adicione pelo menos um modelo de chat; para RAG, adicione um modelo de embedding.
+1. **Configure a API**: adicione pelo menos um modelo de chat; para RAG, adicione um modelo de embedding e escolha uma estratégia de chunking.
 2. **Configure materiais**: prepare base de conhecimento, títulos, palavras-chave, imagens e autores com base em informações reais e verificáveis.
-3. **Crie uma tarefa**: escolha materiais, modelo, volume de geração e frequência de publicação; primeiro teste o fluxo via rascunhos ou revisão.
+3. **Crie uma tarefa**: escolha materiais, modelo, volume de geração, frequência e escopo de publicação; primeiro teste o fluxo via rascunhos ou revisão.
 
 ---
 
@@ -177,7 +186,7 @@ docker compose up -d
 
 Acesse `http://localhost:18080` (frontend) e `http://localhost:18080/geo_admin` (admin).
 
-Para produção, configure `.env.prod` e use `docker compose -f docker-compose.prod.yml up -d`. O serviço `init` de produção executa as migrações e o `db:seed` inicial para criar a conta admin padrão; execuções repetidas não sobrescrevem o usuário `admin` existente.
+Para produção, configure `.env.prod` e use `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`. O serviço `init` de produção executa as migrações e o `db:seed` inicial para criar a conta admin padrão; execuções repetidas não sobrescrevem o usuário `admin` existente.
 
 ### portas
 

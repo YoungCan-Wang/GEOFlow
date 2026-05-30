@@ -7,11 +7,14 @@ use App\Models\Admin;
 use App\Models\AiModel;
 use App\Models\Article;
 use App\Models\ArticleDistribution;
+use App\Models\ArticleImage;
 use App\Models\Author;
 use App\Models\Category;
 use App\Models\DistributionChannel;
 use App\Models\DistributionChannelSecret;
 use App\Models\DistributionLog;
+use App\Models\Image;
+use App\Models\ImageLibrary;
 use App\Models\Prompt;
 use App\Models\Task;
 use App\Models\TitleLibrary;
@@ -172,6 +175,200 @@ class AdminDistributionPageTest extends TestCase
             ->assertSee('静态文件模式')
             ->assertSee('伪静态模式')
             ->assertSee(__('admin.distribution.help.endpoint_url'));
+    }
+
+    public function test_wordpress_distribution_channel_form_shows_wordpress_fields(): void
+    {
+        $this->actingAs($this->admin(), 'admin')
+            ->get(route('admin.distribution.create'))
+            ->assertOk()
+            ->assertSee(__('admin.distribution.channel_type.wordpress_rest'))
+            ->assertSee(__('admin.distribution.wordpress.section_title'))
+            ->assertSee('name="wordpress_username"', false)
+            ->assertSee('name="wordpress_application_password"', false)
+            ->assertSee('name="wordpress_post_status"', false)
+            ->assertSee('name="wordpress_category_strategy"', false)
+            ->assertSee('name="wordpress_tag_strategy"', false)
+            ->assertSee('name="wordpress_image_strategy"', false);
+    }
+
+    public function test_admin_can_create_wordpress_distribution_channel(): void
+    {
+        $this->actingAs($this->admin(), 'admin')
+            ->post(route('admin.distribution.store'), [
+                'name' => 'WordPress 站点',
+                'domain' => 'wp.example.com',
+                'endpoint_url' => 'https://wp.example.com',
+                'channel_type' => 'wordpress_rest',
+                'wordpress_username' => 'editor',
+                'wordpress_application_password' => 'app password',
+                'wordpress_post_status' => 'draft',
+                'wordpress_category_strategy' => 'match_or_create',
+                'wordpress_fixed_category' => '',
+                'wordpress_tag_strategy' => 'keywords_to_tags',
+                'wordpress_image_strategy' => 'upload_to_media',
+                'status' => 'active',
+            ])
+            ->assertRedirect(route('admin.distribution.index'))
+            ->assertSessionMissing('distribution_secret');
+
+        $this->assertDatabaseHas('distribution_channels', [
+            'name' => 'WordPress 站点',
+            'channel_type' => 'wordpress_rest',
+            'endpoint_url' => 'https://wp.example.com',
+        ]);
+
+        $channel = DistributionChannel::query()->where('name', 'WordPress 站点')->firstOrFail();
+        $this->assertSame('editor', $channel->resolvedChannelConfig()['wordpress_username']);
+        $this->assertSame('draft', $channel->resolvedChannelConfig()['wordpress_post_status']);
+        $this->assertSame('upload_to_media', $channel->resolvedChannelConfig()['wordpress_image_strategy']);
+
+        $secret = DistributionChannelSecret::query()
+            ->where('distribution_channel_id', (int) $channel->id)
+            ->where('status', 'active')
+            ->firstOrFail();
+        $this->assertStringStartsWith('wp_', (string) $secret->key_id);
+        $this->assertSame(['wordpress.rest'], $secret->scopes);
+        $this->assertSame('app password', app(ApiKeyCrypto::class)->decrypt((string) $secret->secret_ciphertext));
+    }
+
+    public function test_wordpress_distribution_channel_requires_application_password_on_create(): void
+    {
+        $this->actingAs($this->admin(), 'admin')
+            ->post(route('admin.distribution.store'), [
+                'name' => 'WordPress 站点',
+                'domain' => 'wp.example.com',
+                'endpoint_url' => 'https://wp.example.com',
+                'channel_type' => 'wordpress_rest',
+                'wordpress_username' => 'editor',
+                'wordpress_post_status' => 'draft',
+                'wordpress_category_strategy' => 'match_or_create',
+                'wordpress_tag_strategy' => 'keywords_to_tags',
+                'wordpress_image_strategy' => 'upload_to_media',
+                'status' => 'active',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('wordpress_application_password');
+    }
+
+    public function test_wordpress_distribution_detail_hides_target_site_package_and_shows_connection_guide(): void
+    {
+        $channel = DistributionChannel::query()->create([
+            'name' => 'WordPress 站点',
+            'domain' => 'wp.example.com',
+            'endpoint_url' => 'https://wp.example.com',
+            'channel_type' => 'wordpress_rest',
+            'channel_config' => [
+                'wordpress_username' => 'editor',
+                'wordpress_post_status' => 'draft',
+                'wordpress_category_strategy' => 'match_or_create',
+                'wordpress_tag_strategy' => 'keywords_to_tags',
+                'wordpress_image_strategy' => 'upload_to_media',
+            ],
+            'status' => 'active',
+        ]);
+        DistributionChannelSecret::query()->create([
+            'distribution_channel_id' => (int) $channel->id,
+            'key_id' => 'wp_testsecret',
+            'secret_ciphertext' => app(ApiKeyCrypto::class)->encrypt('app password'),
+            'status' => 'active',
+            'scopes' => ['wordpress.rest'],
+        ]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->get(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
+            ->assertOk()
+            ->assertSee(__('admin.distribution.channel_type.wordpress_rest'))
+            ->assertSee(__('admin.distribution.wordpress.guide_title'))
+            ->assertSee('/wp-json/wp/v2/users/me?context=edit')
+            ->assertSee(__('admin.distribution.wordpress.secret_hint'))
+            ->assertDontSee(__('admin.distribution.detail.target_package_files'))
+            ->assertDontSee(__('admin.distribution.detail.agent_package_name'))
+            ->assertDontSee(__('admin.distribution.button.download_package'))
+            ->assertDontSee(__('admin.distribution.rewrite.copy_nginx'))
+            ->assertDontSee(__('admin.distribution.button.rotate_secret'));
+    }
+
+    public function test_wordpress_distribution_edit_shows_wordpress_settings_without_agent_rewrite_controls(): void
+    {
+        $channel = DistributionChannel::query()->create([
+            'name' => 'WordPress 站点',
+            'domain' => 'wp.example.com',
+            'endpoint_url' => 'https://wp.example.com',
+            'channel_type' => 'wordpress_rest',
+            'channel_config' => [
+                'wordpress_username' => 'editor',
+                'wordpress_post_status' => 'draft',
+                'wordpress_category_strategy' => 'match_or_create',
+                'wordpress_tag_strategy' => 'keywords_to_tags',
+                'wordpress_image_strategy' => 'upload_to_media',
+            ],
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->get(route('admin.distribution.edit', ['channelId' => (int) $channel->id]))
+            ->assertOk()
+            ->assertSee(__('admin.distribution.channel_type.wordpress_rest'))
+            ->assertSee(__('admin.distribution.help.channel_type_locked'))
+            ->assertSee(__('admin.distribution.wordpress.section_title'))
+            ->assertSee('name="channel_type" value="wordpress_rest"', false)
+            ->assertSee('name="wordpress_username"', false)
+            ->assertSee(__('admin.distribution.wordpress.application_password_update_help'))
+            ->assertDontSee(__('admin.distribution.front_mode.static'))
+            ->assertDontSee(__('admin.distribution.rewrite.title'))
+            ->assertDontSee(__('admin.site_settings.theme.section_title'));
+    }
+
+    public function test_wordpress_distribution_health_check_updates_channel_status(): void
+    {
+        Http::fake([
+            'https://wp.example.com/wp-json' => Http::response(['name' => 'WordPress']),
+            'https://wp.example.com/wp-json/wp/v2/users/me*' => Http::response([
+                'id' => 7,
+                'name' => 'Editor',
+                'capabilities' => [
+                    'edit_posts' => true,
+                    'publish_posts' => true,
+                    'upload_files' => true,
+                ],
+            ]),
+        ]);
+
+        $channel = DistributionChannel::query()->create([
+            'name' => 'WordPress 站点',
+            'domain' => 'wp.example.com',
+            'endpoint_url' => 'https://wp.example.com',
+            'channel_type' => 'wordpress_rest',
+            'channel_config' => [
+                'wordpress_username' => 'editor',
+                'wordpress_post_status' => 'draft',
+                'wordpress_category_strategy' => 'fixed',
+                'wordpress_tag_strategy' => 'disabled',
+                'wordpress_image_strategy' => 'keep_original',
+            ],
+            'status' => 'active',
+        ]);
+        DistributionChannelSecret::query()->create([
+            'distribution_channel_id' => (int) $channel->id,
+            'key_id' => 'wp_health',
+            'secret_ciphertext' => app(ApiKeyCrypto::class)->encrypt('app password'),
+            'status' => 'active',
+            'scopes' => ['wordpress.rest'],
+        ]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->post(route('admin.distribution.health', ['channelId' => (int) $channel->id]))
+            ->assertRedirect()
+            ->assertSessionHas('message');
+
+        $this->assertDatabaseHas('distribution_channels', [
+            'id' => (int) $channel->id,
+            'last_health_status' => 'ok',
+            'last_error_message' => null,
+        ]);
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://wp.example.com/wp-json/wp/v2/users/me?context=edit');
     }
 
     public function test_admin_can_update_distribution_channel(): void
@@ -754,6 +951,16 @@ class AdminDistributionPageTest extends TestCase
 
         $siteCss = (string) $zip->getFromName('assets/css/site.css');
         $siteJs = (string) $zip->getFromName('assets/js/site.js');
+        $channel->refresh();
+        $expectedAssetVersion = substr(hash('sha256', implode('|', [
+            (string) ($channel->template_key ?? ''),
+            (string) ($channel->updated_at ?? ''),
+            (string) config('geoflow.app_version', ''),
+            hash('sha256', $siteCss),
+            hash('sha256', $siteJs),
+        ])), 0, 12);
+        $this->assertStringContainsString('assets/css/site.css?v='.$expectedAssetVersion, $staticIndex);
+        $this->assertStringContainsString('assets/js/site.js?v='.$expectedAssetVersion, $staticIndex);
         $this->assertStringContainsString('.content img', $siteCss);
         $this->assertStringContainsString('data-copy-target', $siteJs);
         $this->assertStringContainsString('body.target-theme-toutiao', $siteCss);
@@ -849,6 +1056,51 @@ class AdminDistributionPageTest extends TestCase
         unlink($zipPath);
     }
 
+    public function test_fashion_target_site_package_is_self_contained_without_google_fonts(): void
+    {
+        $channel = DistributionChannel::query()->create([
+            'name' => 'Fashion Insight',
+            'domain' => 'fashion.example.com',
+            'endpoint_url' => 'https://fashion.example.com',
+            'template_key' => 'fashion-insight',
+            'status' => 'active',
+        ]);
+        DistributionChannelSecret::query()->create([
+            'distribution_channel_id' => (int) $channel->id,
+            'key_id' => 'gfk_fashion',
+            'secret_ciphertext' => app(ApiKeyCrypto::class)->encrypt('gfsec_fashion_secret'),
+            'status' => 'active',
+            'scopes' => ['article.publish', 'health.check'],
+        ]);
+
+        $response = $this->actingAs($this->admin(), 'admin')
+            ->post(route('admin.distribution.download-package', ['channelId' => (int) $channel->id]), [
+                'package_password' => 'secret-123',
+            ]);
+
+        $response->assertOk();
+
+        $zipPath = tempnam(sys_get_temp_dir(), 'geoflow-target-site-');
+        $this->assertIsString($zipPath);
+        file_put_contents($zipPath, $response->streamedContent());
+
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($zipPath));
+
+        $staticIndex = (string) $zip->getFromName('index.html');
+        $frontController = (string) $zip->getFromName('public/index.php');
+        $siteCss = (string) $zip->getFromName('assets/css/site.css');
+
+        $this->assertStringContainsString('class="target-theme-fashion"', $staticIndex);
+        $this->assertStringContainsString('body.target-theme-fashion', $siteCss);
+        $this->assertStringNotContainsString('fonts.googleapis.com', $frontController);
+        $this->assertStringNotContainsString('fonts.gstatic.com', $frontController);
+        $this->assertStringNotContainsString('fonts.googleapis.com', $staticIndex);
+
+        $zip->close();
+        unlink($zipPath);
+    }
+
     public function test_channel_target_site_package_supports_agent_endpoint_under_subdirectory(): void
     {
         $channel = DistributionChannel::query()->create([
@@ -903,6 +1155,57 @@ class AdminDistributionPageTest extends TestCase
         $this->assertStringContainsString('function sitePath', $frontController);
         $this->assertStringContainsString('verifySignedRequest($config, $method, $path, $body)', $frontController);
         $this->assertStringContainsString("frontSitePath(\$config, '/article/'.rawurlencode(\$slug))", $frontController);
+
+        $zip->close();
+        unlink($zipPath);
+    }
+
+    public function test_apparel_target_site_package_does_not_render_dead_category_navigation(): void
+    {
+        $channel = DistributionChannel::query()->create([
+            'name' => '服装情报站',
+            'domain' => 'apparel.example.com',
+            'endpoint_url' => 'https://apparel.example.com',
+            'template_key' => 'apparel-sourcing-intelligence',
+            'site_settings' => [
+                'site_name' => 'Apparel Intelligence',
+                'site_description' => 'Global sourcing reports',
+            ],
+            'status' => 'active',
+        ]);
+        DistributionChannelSecret::query()->create([
+            'distribution_channel_id' => (int) $channel->id,
+            'key_id' => 'gfk_apparel',
+            'secret_ciphertext' => app(ApiKeyCrypto::class)->encrypt('gfsec_apparel_secret'),
+            'status' => 'active',
+            'scopes' => ['article.publish', 'health.check'],
+        ]);
+
+        $response = $this->actingAs($this->admin(), 'admin')
+            ->post(route('admin.distribution.download-package', ['channelId' => (int) $channel->id]), [
+                'package_password' => 'secret-123',
+            ]);
+
+        $zipPath = tempnam(sys_get_temp_dir(), 'geoflow-target-site-');
+        $this->assertIsString($zipPath);
+        file_put_contents($zipPath, $response->streamedContent());
+
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($zipPath));
+
+        $staticIndex = (string) $zip->getFromName('index.html');
+        $this->assertStringContainsString('assets/css/site.css?v=', $staticIndex);
+        $this->assertStringContainsString('assets/js/site.js?v=', $staticIndex);
+        $this->assertStringContainsString('class="target-theme-apparel"', $staticIndex);
+
+        $siteCss = (string) $zip->getFromName('assets/css/site.css');
+        $this->assertStringContainsString('target-theme-apparel', $siteCss);
+        $this->assertSame(1, substr_count($siteCss, 'body.target-theme-fashion{'));
+
+        $frontController = (string) $zip->getFromName('public/index.php');
+        $this->assertStringContainsString('function frontVersionedAssetPath', $frontController);
+        $this->assertStringNotContainsString("foreach (array_slice(siteCategories(\$config), 0, 7)", $frontController);
+        $this->assertStringNotContainsString("frontSitePath(\$config, '/')\">'.h((string) \$category['name'])", $frontController);
 
         $zip->close();
         unlink($zipPath);
@@ -1491,10 +1794,77 @@ MD,
             && ! str_contains((string) $request['article']['content_html'], '<h1>已发布分发文章</h1>'));
     }
 
+    public function test_wordpress_distribution_queue_process_publishes_article_and_records_remote_result(): void
+    {
+        Http::fake([
+            'https://wp.example.com/wp-json/wp/v2/posts' => Http::response([
+                'id' => 123,
+                'link' => 'https://wp.example.com/geo-article/',
+            ], 201),
+        ]);
+
+        $fixtures = $this->taskFixtures();
+        $channel = DistributionChannel::query()->create([
+            'name' => 'WordPress 站点',
+            'domain' => 'wp.example.com',
+            'endpoint_url' => 'https://wp.example.com',
+            'channel_type' => 'wordpress_rest',
+            'channel_config' => [
+                'wordpress_username' => 'editor',
+                'wordpress_post_status' => 'draft',
+                'wordpress_category_strategy' => 'fixed',
+                'wordpress_fixed_category' => '',
+                'wordpress_tag_strategy' => 'disabled',
+                'wordpress_image_strategy' => 'keep_original',
+            ],
+            'status' => 'active',
+        ]);
+        DistributionChannelSecret::query()->create([
+            'distribution_channel_id' => (int) $channel->id,
+            'key_id' => 'wp_queue',
+            'secret_ciphertext' => app(ApiKeyCrypto::class)->encrypt('app password'),
+            'status' => 'active',
+            'scopes' => ['wordpress.rest'],
+        ]);
+        $article = Article::query()->create([
+            'title' => 'WordPress 队列文章',
+            'slug' => 'geo-article',
+            'excerpt' => '摘要',
+            'content' => "## 核心观点\n\n正文",
+            'category_id' => $fixtures['category']->id,
+            'author_id' => $fixtures['author']->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+        $distribution = ArticleDistribution::query()->create([
+            'article_id' => (int) $article->id,
+            'distribution_channel_id' => (int) $channel->id,
+            'action' => 'publish',
+            'status' => 'queued',
+            'idempotency_key' => 'article-'.$article->id.'-channel-'.$channel->id.'-publish-v1',
+        ]);
+
+        app(DistributionOrchestrator::class)->process($distribution);
+
+        $this->assertDatabaseHas('article_distributions', [
+            'id' => (int) $distribution->id,
+            'status' => 'synced',
+            'remote_id' => '123',
+            'remote_url' => 'https://wp.example.com/geo-article/',
+        ]);
+        $distribution->refresh();
+        $this->assertSame(123, $distribution->remote_meta['wordpress_post_id'] ?? null);
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://wp.example.com/wp-json/wp/v2/posts'
+            && $request['title'] === 'WordPress 队列文章'
+            && $request['status'] === 'draft'
+            && str_contains((string) $request['content'], '<h2>核心观点</h2>'));
+    }
+
     public function test_distribution_payload_embeds_local_image_assets_for_target_site(): void
     {
         $fixtures = $this->taskFixtures();
-        $imagePath = public_path('storage/uploads/images/2026/05/distribution-demo.png');
+        $imagePath = storage_path('app/public/uploads/images/2026/05/distribution-demo.png');
         if (! is_dir(dirname($imagePath))) {
             mkdir(dirname($imagePath), 0755, true);
         }
@@ -1523,10 +1893,63 @@ MD,
         $this->assertStringContainsString('src="/storage/uploads/images/2026/05/distribution-demo.png"', (string) $payload['article']['content_html']);
     }
 
+    public function test_distribution_payload_includes_selected_article_hero_image_asset(): void
+    {
+        $fixtures = $this->taskFixtures();
+        $imagePath = storage_path('app/public/uploads/images/2026/05/hero-demo.png');
+        if (! is_dir(dirname($imagePath))) {
+            mkdir(dirname($imagePath), 0755, true);
+        }
+        file_put_contents($imagePath, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=') ?: '');
+
+        $article = Article::query()->create([
+            'title' => '封面图分发文章',
+            'slug' => 'article-with-hero-image',
+            'excerpt' => '摘要',
+            'content' => '正文',
+            'category_id' => $fixtures['category']->id,
+            'author_id' => $fixtures['author']->id,
+            'status' => 'published',
+            'review_status' => 'approved',
+            'published_at' => now(),
+        ]);
+        $library = ImageLibrary::query()->create([
+            'name' => '封面图库',
+        ]);
+        $image = Image::query()->create([
+            'library_id' => (int) $library->id,
+            'filename' => 'hero-demo.png',
+            'original_name' => 'hero-demo.png',
+            'file_name' => 'hero-demo.png',
+            'file_path' => 'storage/uploads/images/2026/05/hero-demo.png',
+            'file_size' => 67,
+            'mime_type' => 'image/png',
+            'width' => 1,
+            'height' => 1,
+        ]);
+        ArticleImage::query()->create([
+            'article_id' => (int) $article->id,
+            'image_id' => (int) $image->id,
+            'position' => 1,
+        ]);
+
+        try {
+            $payload = app(DistributionPayloadBuilder::class)->build($article);
+        } finally {
+            @unlink($imagePath);
+        }
+
+        $this->assertSame('/storage/uploads/images/2026/05/hero-demo.png', $payload['article']['hero_image_url'] ?? null);
+        $this->assertCount(1, $payload['assets']['images'] ?? []);
+        $this->assertSame('/storage/uploads/images/2026/05/hero-demo.png', $payload['assets']['images'][0]['source_url'] ?? null);
+        $this->assertSame('image/png', $payload['assets']['images'][0]['mime_type'] ?? null);
+        $this->assertNotEmpty($payload['assets']['images'][0]['content_base64'] ?? '');
+    }
+
     public function test_distribution_payload_does_not_embed_oversized_local_image_assets(): void
     {
         $fixtures = $this->taskFixtures();
-        $imagePath = public_path('storage/uploads/images/2026/05/distribution-large.png');
+        $imagePath = storage_path('app/public/uploads/images/2026/05/distribution-large.png');
         if (! is_dir(dirname($imagePath))) {
             mkdir(dirname($imagePath), 0755, true);
         }
@@ -1824,7 +2247,7 @@ MD,
             'review_status' => 'approved',
             'published_at' => now(),
         ]);
-        ArticleDistribution::query()->create([
+        $distribution = ArticleDistribution::query()->create([
             'article_id' => (int) $article->id,
             'distribution_channel_id' => (int) $channel->id,
             'action' => 'publish',
@@ -1833,12 +2256,16 @@ MD,
             'attempt_count' => 3,
             'idempotency_key' => 'compact-jobs-table',
         ]);
+        config(['app.url' => 'https://configured.example']);
+        $deletePath = route('admin.distribution.article.delete', ['distributionId' => (int) $distribution->id], false);
 
         $this->actingAs($this->admin(), 'admin')
             ->get(route('admin.distribution.show', ['channelId' => (int) $channel->id]))
             ->assertOk()
             ->assertSee('data-distribution-delete-form', false)
             ->assertSee('data-distribution-delete-status', false)
+            ->assertSee('action="'.$deletePath.'"', false)
+            ->assertDontSee('https://configured.example'.$deletePath, false)
             ->assertSee('whitespace-nowrap', false)
             ->assertSee('break-words', false)
             ->assertSee('break-all', false);

@@ -2,7 +2,7 @@
 
 > Languages: [简体中文](../../README.md) | [English](README_en.md) | [日本語](README_ja.md) | [Español](README_es.md) | [Русский](README_ru.md) | [Português (BR)](README_pt_BR.md)
 
-> GEOFlow は GEO（Generative Engine Optimization）向けのオープンソース・コンテンツエンジニアリング／マルチサイト配信システムです。ナレッジベース、素材ライブラリ、プロンプト、AI 生成タスク、レビューと公開、データ分析、ターゲットサイトパッケージ、リモート静的ページ配信を一つの運用フローに統合し、信頼できる資料を追跡可能で公開・配信しやすい GEO コンテンツ資産へ変換します。
+> GEOFlow は GEO（Generative Engine Optimization）向けのオープンソース・コンテンツエンジニアリング／マルチサイト配信システムです。ナレッジベース、素材ライブラリ、プロンプト、AI 生成タスク、レビューと公開、データ分析、GEOFlow Agent ターゲットサイトパッケージ、WordPress REST チャネル、リモート静的ページ配信を一つの運用フローに統合し、信頼できる資料を追跡可能で公開・配信しやすい GEO コンテンツ資産へ変換します。
 
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-blue)](https://www.php.net/)
 [![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791)](https://www.postgresql.org/)
@@ -20,12 +20,12 @@ GEOFlow は [Apache License 2.0](../../LICENSE) の下で公開されていま�
 
 | 機能 | 説明 |
 |------|------|
-| 🤖 マルチモデル生成 | OpenAI 互換 API、chat / embedding、Provider URL 自動適配、スマートフェイルオーバー、リトライ、利用統計 |
-| 🧠 ナレッジ RAG | アップロード文書の分割、embedding 設定時のベクトル保存、生成時の関連文脈検索 |
+| 🤖 マルチモデル生成 | OpenAI 互換 API と Gemini ネイティブ API、chat / embedding、Provider URL 自動適配、スマートフェイルオーバー、リトライ、利用統計 |
+| 🧠 ナレッジ RAG | ルールベース分割、任意の LLM セマンティック計画、安定フォールバック、embedding 設定時のベクトル保存、生成時の関連文脈検索 |
 | 🗂 素材とプロンプト | タイトル、キーワード、画像、作者、ナレッジ、本文プロンプト、特殊プロンプト |
-| 📦 タスク自動化 | 生成数、下書きプール、レビュー設定、公開頻度、キュー、失敗リトライ、タスク別記事フィルタ |
+| 📦 タスク自動化 | 生成数、下書きプール、レビュー設定、公開頻度、キュー、失敗リトライ、公開範囲、タスク別記事フィルタ |
 | 📋 レビューと記事管理 | 下書き、レビュー、公開、ゴミ箱、作者、カテゴリ、SEO、タスク由来を一元管理 |
-| 📡 マルチサイト配信 | 配信チャネル、Agent シークレット、ターゲットサイトパッケージ、静的モード、rewrite ルール、リモート編集/削除、キュー、ログ |
+| 📡 マルチサイト配信 | GEOFlow Agent と WordPress REST チャネル、シークレット、ターゲットサイトパッケージ、静的モード、rewrite ルール、リモート編集/削除、キュー、ログ |
 | 🧾 ターゲットサイトパッケージ | チャネルごとの PHP Agent、ホーム、記事ページ、静的アセット、sitemap、`llms.txt` / TXT マップ、Schema |
 | 📊 データ分析 | システム概要、単一サイト運用、マルチサイト配信、アクセスログ、Top コンテンツ、AI クローラー識別、トレンド |
 | 🔍 SEO と LLM 向け出力 | SEO メタ、OG、Schema、GFM Markdown、独立 CSS、画像同期、sitemap、TXT マップ |
@@ -38,16 +38,22 @@ GEOFlow は [Apache License 2.0](../../LICENSE) の下で公開されていま�
 
 ## 🖼 画面プレビュー
 
-<p>
-  <img src="../../docs/images/screenshots/dashboard-en.png" alt="GEOFlow ダッシュボード" width="48%" />
-  <img src="../../docs/images/screenshots/tasks-en.png" alt="GEOFlow タスク管理" width="48%" />
-</p>
-<p>
-  <img src="../../docs/images/screenshots/materials-en.png" alt="GEOFlow 素材管理" width="48%" />
-  <img src="../../docs/images/screenshots/ai-config-en.png" alt="GEOFlow AI 設定" width="48%" />
-</p>
+<table>
+  <tr>
+    <td width="34%" rowspan="3"><img src="../../docs/images/screenshots/analytics-en.png" alt="GEOFlow analytics preview" /><br /><sub>Analytics</sub></td>
+    <td width="33%" rowspan="2"><img src="../../docs/images/screenshots/site-settings-en.png" alt="GEOFlow site settings preview" /><br /><sub>Site Settings</sub></td>
+    <td width="33%"><img src="../../docs/images/screenshots/dashboard-en.png" alt="GEOFlow admin dashboard preview" /><br /><sub>Admin Dashboard</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="../../docs/images/screenshots/tasks-en.png" alt="GEOFlow task management preview" /><br /><sub>Task Management</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="../../docs/images/screenshots/ai-config-en.png" alt="GEOFlow AI model configuration preview" /><br /><sub>AI Model Configuration</sub></td>
+    <td width="33%"><img src="../../docs/images/screenshots/materials-en.png" alt="GEOFlow materials preview" /><br /><sub>Materials</sub></td>
+  </tr>
+</table>
 
-ホーム、タスク、記事フロー、モデル設定の主要導線をカバーします。画像パスが未配置の場合はローカルで補完してください。
+管理画面トップ、データ分析、タスク、素材、モデル設定、サイト設定の主要導線をカバーします。
 
 ---
 
@@ -56,8 +62,11 @@ GEOFlow は [Apache License 2.0](../../LICENSE) の下で公開されていま�
 GEOFlow 2.0 の主な変更点は次のとおりです。
 
 - **管理画面を運用ナビゲーション化**：3 ステップ導線を残し、単一サイト運用、マルチサイト配信、関連 skill リソースに整理。
+- **Gemini と OpenAI 互換 Provider を両方サポート**：モデル設定で OpenAI 互換ルートと Gemini ネイティブ chat / embedding を扱えます。
+- **ナレッジ分割にセマンティック計画を追加**：ルールベース、自動、任意の LLM セマンティック計画を選択できます。LLM は境界だけを計画し、最終 chunk は原文から安定的に再構築されます。
 - **データ分析ページを独立化**：システム概要、コンテンツ運用、タスク/素材の健全性、配信状況、アクセスログ、AI クローラートレンドを `/admin/analytics` に集約。
-- **配信管理が実運用可能に**：チャネル、シークレット、接続テスト、ターゲットサイトパッケージ、静的/rewrite モード、リモート設定同期、キュー、ログ、リモート編集/削除を提供。
+- **配信管理が実運用可能に**：GEOFlow Agent と WordPress REST チャネル、シークレット、接続テスト、ターゲットサイトパッケージ、静的/rewrite モード、リモート設定同期、キュー、ログ、リモート編集/削除を提供。
+- **公開範囲を明確化**：本体サイト＋チャネル、チャネルのみ、本体サイトのみを選択可能。本体サイトのみではチャネル選択が無効になります。
 - **ターゲットサイトを静的運用可能に**：配信時にホーム、記事ページ、sitemap、TXT マップ、`llms.txt`、画像、独立 CSS を再生成。
 - **素材と RAG を強化**：ナレッジ分割、ベクトル化状態、タイトル、キーワード、画像、作者、プロンプトをタスク入力層として統合。
 - **デプロイと安全性を改善**：本番 Docker は Nginx + PHP-FPM、既存管理者を seed で上書きせず、Docker/Composer ミラーを設定可能。
@@ -101,9 +110,9 @@ AI 設定 / 素材 / プロンプト / タスク設定
 
 ## ⚡ 管理画面の最短導線
 
-1. **API を設定**：少なくとも 1 つの chat モデルを追加します。RAG を使う場合は embedding モデルも追加します。
+1. **API を設定**：少なくとも 1 つの chat モデルを追加します。RAG を使う場合は embedding モデルを追加し、ナレッジ分割戦略を選びます。
 2. **素材を設定**：ナレッジ、タイトル、キーワード、画像、作者を準備します。まずは実在し検証できる資料を使ってください。
-3. **タスクを作成**：素材、モデル、生成数、公開頻度を選び、最初は下書きまたはレビューから検証します。
+3. **タスクを作成**：素材、モデル、生成数、公開頻度、公開範囲を選び、最初は下書きまたはレビューから検証します。
 
 ---
 

@@ -2,7 +2,56 @@
 
 This document tracks user-facing updates in the public repository. For future GitHub pushes, update this file together with the Chinese version in `CHANGELOG.md`.
 
+## 2026-05-28
+
+### v2.0.2
+
+- Upgraded the admin dashboard into a GEOFlow automation workflow panel:
+  - Shows how APIs, material libraries, tasks, articles, distribution, Analytics, and site settings connect in the automated production flow.
+  - Keeps the three-step setup guide and companion Skill shortcuts while removing duplicated dashboard metric cards.
+- Improved Analytics data accuracy:
+  - Total views, viewed content, top content, and log analytics now prefer `view_logs` event data and filter out non-GET requests.
+  - Publishing trends use actual `published_at` timestamps, and distribution metrics respect task/category filters through related articles.
+  - AI crawler, search bot, other automation, and human traffic classification now share one rule set to reduce misclassification.
+- Improved local Docker development behavior:
+  - The development image disables CLI OPcache so mounted code updates are reflected without stale admin pages.
+- Updated the admin version to `2.0.2`, including `version.json`, environment examples, and default admin version display values.
+
+## 2026-05-24
+
+### AI Models and Knowledge Bases
+
+- Added native Gemini model support:
+  - Gemini chat and embedding models can be configured without relying only on OpenAI-compatible routes.
+  - Model listings, connection tests, and task generation now recognize Gemini providers consistently.
+- Added knowledge-base chunking strategy configuration:
+  - Supports structured rule chunking, automatic strategy selection, and optional LLM semantic planning.
+  - The LLM only plans semantic boundaries; final chunks are rebuilt from the source text, with rule chunking as the stable fallback.
+  - Chunk metadata now includes title, section path, strategy, sequence, and source hash for preview, debugging, and rebuilds.
+
+### Tasks and Distribution
+
+- Improved task create/edit pages:
+  - Form width now aligns with the task-management list and reduces unused side whitespace.
+  - Content settings, material choices, and distribution-scope sections use the wider layout more effectively.
+- Fixed channel selection when the publication scope is local-only:
+  - Selecting “publish only to local site” disables and clears distribution channel checkboxes in the UI.
+  - The backend ignores stale `distribution_channel_ids` under `local_only`, preventing accidental remote distribution jobs.
+
+### Documentation
+
+- Updated the repository README and localized READMEs with Gemini, semantic chunking, WordPress REST channels, and publication-scope behavior.
+- Updated the Chinese and English Wiki outline and added focused pages for Distribution Management, Analytics, and Knowledge Chunking / RAG.
+
 ## 2026-05-23
+
+### Distribution Management
+
+- Added WordPress REST API distribution channel support:
+  - Supports WordPress Application Password authentication, with encrypted storage and no plaintext reveal.
+  - Supports post publish, update, delete, media upload, category/tag sync, and basic site settings sync.
+  - Shows different configuration fields and onboarding guidance for GEOFlow Agent and WordPress REST channels.
+  - Reuses the unified distribution queue, remote metadata, health checks, remote edit/delete actions, and distribution logs for WordPress channels.
 
 ### Documentation
 
